@@ -17,7 +17,8 @@ Provides:
 
 - full-screen capture
 - active-window capture
-- window-by-name capture
+- visible-window-by-name capture
+- visible-window-by-id capture
 - output/monitor capture
 - workspace capture
 - interactive region capture
@@ -91,6 +92,8 @@ Then reload pi:
 - `Take a screenshot of the kitty window`
 - `Capture window id 229`
 - `List windows I can capture`
+
+On Sway and Hyprland, named/id window capture is screen-region based, so only currently visible windows can be captured reliably.
 
 ### Slash commands
 

@@ -6,19 +6,38 @@ sway_require_jq() {
 
 sway_windows_json() {
   sway_require_jq
-  swaymsg -t get_tree | jq -c '[.. | objects
-    | select((.type? == "con" or .type? == "floating_con") and (.pid? != null) and (.rect? != null) and ((.visible? // true) == true))
-    | {
-        id: .id,
-        title: (.name // ""),
-        app_id: (.app_id // ""),
-        shell: (.shell // ""),
-        focused: (.focused // false),
-        pid: .pid,
-        workspace: (.workspace // null),
-        geometry: {x: .rect.x, y: .rect.y, width: .rect.width, height: .rect.height}
-      }
-  ]'
+  local tree_json workspaces_json
+  tree_json="$(swaymsg -t get_tree)"
+  workspaces_json="$(swaymsg -t get_workspaces)"
+  jq -cn --argjson tree "$tree_json" --argjson workspaces "$workspaces_json" '
+    def collect_windows($node; $workspace):
+      if (($node.type? == "con" or $node.type? == "floating_con") and ($node.pid? != null) and ($node.rect? != null)) then
+        [{
+          id: $node.id,
+          title: ($node.name // ""),
+          app_id: ($node.app_id // ""),
+          shell: ($node.shell // ""),
+          focused: ($node.focused // false),
+          pid: $node.pid,
+          workspace: $workspace,
+          geometry: {x: $node.rect.x, y: $node.rect.y, width: $node.rect.width, height: $node.rect.height}
+        }]
+      else
+        [
+          (($node.nodes // []) + ($node.floating_nodes // []))[]? as $child
+          | collect_windows($child; if $child.type? == "workspace" then ($child.name // $workspace) else $workspace end)
+        ] | add // []
+      end;
+
+    ($workspaces | map({key: .name, value: (.visible // false)}) | from_entries) as $workspace_visible
+    | collect_windows($tree; null)
+    | map(. + {visible: ($workspace_visible[.workspace] // false)})
+    | sort_by(.workspace, .title, .app_id, .id)
+  '
+}
+
+sway_visible_windows_json() {
+  jq -c 'map(select((.visible // false) == true))' <<<"$(sway_windows_json)"
 }
 
 sway_outputs_json() {
@@ -66,54 +85,43 @@ sway_active_window_geometry() {
 sway_ranked_window_matches() {
   local query="$1"
   sway_require_jq
-  local q_lower
+  local q_lower windows_json
   q_lower="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')"
-  swaymsg -t get_tree | jq -c --arg q "$q_lower" '[.. | objects
-    | select((.type? == "con" or .type? == "floating_con") and (.pid? != null) and (.rect? != null) and ((.visible? // true) == true))
-    | {
-        id: .id,
-        title: (.name // ""),
-        app_id: (.app_id // ""),
-        focused: (.focused // false),
-        pid: .pid,
-        geometry: {x: .rect.x, y: .rect.y, width: .rect.width, height: .rect.height}
-      }
-    | . + {
+  windows_json="$(sway_visible_windows_json)"
+  jq -c --arg q "$q_lower" '
+    map(
+      . + {
         title_lc: (.title | ascii_downcase),
         app_id_lc: (.app_id | ascii_downcase)
       }
-    | . + {
-        base_score: (
-          (if .title_lc == $q then 100 else 0 end) +
-          (if .app_id_lc == $q then 95 else 0 end) +
-          (if (.title_lc | startswith($q)) and (.title_lc != $q) then 70 else 0 end) +
-          (if (.app_id_lc | startswith($q)) and (.app_id_lc != $q) then 65 else 0 end) +
-          (if (.title_lc | contains($q)) and (.title_lc != $q) and ((.title_lc | startswith($q)) | not) then 40 else 0 end) +
-          (if (.app_id_lc | contains($q)) and (.app_id_lc != $q) and ((.app_id_lc | startswith($q)) | not) then 35 else 0 end)
-        )
-      }
-    | . + { score: (.base_score + (if .focused then 1 else 0 end)) }
-    | select(.base_score > 0)
-    | del(.title_lc, .app_id_lc)
-  ] | sort_by(-.score, .title, .app_id)'
+      | . + {
+          base_score: (
+            (if .title_lc == $q then 100 else 0 end) +
+            (if .app_id_lc == $q then 95 else 0 end) +
+            (if (.title_lc | startswith($q)) and (.title_lc != $q) then 70 else 0 end) +
+            (if (.app_id_lc | startswith($q)) and (.app_id_lc != $q) then 65 else 0 end) +
+            (if (.title_lc | contains($q)) and (.title_lc != $q) and ((.title_lc | startswith($q)) | not) then 40 else 0 end) +
+            (if (.app_id_lc | contains($q)) and (.app_id_lc != $q) and ((.app_id_lc | startswith($q)) | not) then 35 else 0 end)
+          )
+        }
+      | . + { score: (.base_score + (if .focused then 1 else 0 end)) }
+      | select(.base_score > 0)
+      | del(.title_lc, .app_id_lc)
+    ) | sort_by(-.score, .title, .app_id)
+  ' <<<"$windows_json"
 }
 
 sway_window_geometry_by_id() {
   local window_id="$1"
   sway_require_jq
-  swaymsg -t get_tree | jq -c --argjson id "$window_id" 'first(.. | objects
-    | select((.type? == "con" or .type? == "floating_con") and (.id? == $id) and (.rect? != null))
-    | {
-        x: .rect.x,
-        y: .rect.y,
-        width: .rect.width,
-        height: .rect.height,
-        title: (.name // ""),
-        app_id: (.app_id // ""),
-        id: .id,
-        pid: .pid
-      }
-  )'
+  jq -c --argjson id "$window_id" 'first(.[] | select(.id == $id) | (.geometry + {
+    title,
+    app_id,
+    id,
+    pid,
+    workspace,
+    visible
+  }))' <<<"$(sway_windows_json)"
 }
 
 sway_output_geometry() {
@@ -132,8 +140,20 @@ sway_workspace_geometry() {
   fi
 }
 
+sway_require_window_visible_for_capture() {
+  local mode="$1"
+  local geom_json="$2"
+  local workspace visible details
+  workspace="$(jq -r '.workspace // empty' <<<"$geom_json")"
+  visible="$(jq -r '.visible // false' <<<"$geom_json")"
+  if [[ "$visible" != "true" ]]; then
+    details="$(jq -cn --arg reason "window-not-visible" --arg capture_method "screen-region" --arg workspace "$workspace" --argjson match "$geom_json" '{reason:$reason, capture_method:$capture_method, workspace:($workspace | select(length > 0)), match:$match}')"
+    fail_json "Cannot capture window because it is not visible on the current desktop; this backend captures screen regions, not hidden window surfaces" "sway-grim" "$mode" "$details"
+  fi
+}
+
 sway_capture() {
-  local path region geom matches top second query_details extra
+  local path region geom matches top second extra
   case "$MODE" in
     full)
       path="$(mk_png_path "$OUTPUT")"
@@ -157,15 +177,15 @@ sway_capture() {
       matches="$(sway_ranked_window_matches "$WINDOW_QUERY")"
       top="$(jq '.[0] // null' <<<"$matches")"
       second="$(jq '.[1] // null' <<<"$matches")"
-      [[ "$top" != "null" ]] || fail_json "No sway window matched: $WINDOW_QUERY" "sway-grim" "window"
+      [[ "$top" != "null" ]] || fail_json "No visible sway window matched: $WINDOW_QUERY" "sway-grim" "window"
       if [[ "$second" != "null" ]]; then
         if [[ "$(jq -r '.[0].base_score' <<<"$matches")" == "$(jq -r '.[1].base_score' <<<"$matches")" ]]; then
           fail_json "Ambiguous window query: $WINDOW_QUERY" "sway-grim" "window" "$(jq -c --arg q "$WINDOW_QUERY" '{query:$q, matches:.}' <<<"$matches")"
         fi
       fi
       path="$(mk_png_path "$OUTPUT")"
-      geom="$(jq -c '.[0].geometry + {title: .[0].title, app_id: .[0].app_id, id: .[0].id, pid: .[0].pid}' <<<"$matches")"
-      extra="$(jq -c '.[0] | {match:{id, title, app_id, pid, score, base_score}}' <<<"$matches")"
+      geom="$(jq -c '.[0].geometry + {title: .[0].title, app_id: .[0].app_id, id: .[0].id, pid: .[0].pid, workspace: .[0].workspace, visible: .[0].visible}' <<<"$matches")"
+      extra="$(jq -c '.[0] | {capture_method:"screen-region", match:{id, title, app_id, pid, workspace, visible, score, base_score}}' <<<"$matches")"
       grim -g "$(geom_to_grim "$geom")" "$path"
       emit_success "sway-grim" "window" "$path" "$geom" "$extra"
       ;;
@@ -175,7 +195,8 @@ sway_capture() {
       path="$(mk_png_path "$OUTPUT")"
       geom="$(sway_window_geometry_by_id "$WINDOW_ID")"
       [[ "$geom" != "null" ]] || fail_json "No sway window matched id: $WINDOW_ID" "sway-grim" "window-id"
-      extra="$(jq -c '{match:{id, title, app_id, pid}}' <<<"$geom")"
+      sway_require_window_visible_for_capture "window-id" "$geom"
+      extra="$(jq -c '{capture_method:"screen-region", match:{id, title, app_id, pid, workspace, visible}}' <<<"$geom")"
       grim -g "$(geom_to_grim "$geom")" "$path"
       emit_success "sway-grim" "window-id" "$path" "$geom" "$extra"
       ;;

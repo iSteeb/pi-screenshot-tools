@@ -87,9 +87,12 @@ After `/screenshot list-windows`, you can capture an exact entry by id:
 /screenshot-icat window-id 229
 ```
 
+On Sway and Hyprland, this is still screen-region capture, so the target window must currently be visible. Hidden or off-workspace windows are rejected instead of silently capturing whatever happens to occupy the same rectangle.
+
 ## Notes
 
 - In the package layout, this extension uses the bundled `skills/screenshot-tools` backend.
 - It can also fall back to `~/.pi/agent/skills/screenshot-tools` during local development.
 - The capture logic stays in the skill backend; this extension only adds inline image return/rendering support.
+- `list-windows` now includes visibility and workspace/monitor context when the backend provides it.
 - After adding or changing the extension, run `/reload` in pi.

@@ -139,9 +139,21 @@ function summarizeSuccess(result: CaptureSuccess): string {
   if (mode === "list-windows") {
     const windows = Array.isArray(result.windows) ? result.windows : [];
     const lines = windows.map((window, index) => {
-      const entry = window as { title?: string; app_id?: string; id?: number | string; focused?: boolean };
+      const entry = window as {
+        title?: string;
+        app_id?: string;
+        id?: number | string;
+        address?: string;
+        focused?: boolean;
+        visible?: boolean;
+        workspace?: string;
+        monitor?: string;
+      };
       const label = entry.title || entry.app_id || "(unnamed window)";
-      return `${index + 1}. ${label}${entry.app_id ? ` [${entry.app_id}]` : ""}${entry.focused ? " [focused]" : ""}${entry.id !== undefined ? ` (id=${entry.id})` : ""}`;
+      const idPart = entry.id !== undefined ? ` (id=${entry.id})` : entry.address ? ` (id=${entry.address})` : "";
+      const visibilityPart = entry.visible === false ? " [hidden]" : entry.visible === true ? " [visible]" : "";
+      const locationPart = entry.workspace ? ` [workspace=${entry.workspace}]` : entry.monitor ? ` [monitor=${entry.monitor}]` : "";
+      return `${index + 1}. ${label}${entry.app_id ? ` [${entry.app_id}]` : ""}${entry.focused ? " [focused]" : ""}${visibilityPart}${locationPart}${idPart}`;
     });
     return [`Listed ${windows.length} window(s).`, result.backend ? `Backend: ${result.backend}.` : "", ...lines].filter(Boolean).join("\n");
   }
@@ -183,6 +195,9 @@ function summarizeFailure(result: CaptureFailure): string {
   if (result.backend) parts.push(`Backend: ${result.backend}.`);
   if (result.details?.matches && Array.isArray(result.details.matches)) {
     parts.push(`Candidates: ${result.details.matches.join(" | ")}`);
+  }
+  if (result.details?.capture_method && typeof result.details.capture_method === "string") {
+    parts.push(`Capture method: ${result.details.capture_method}.`);
   }
   return parts.join(" ");
 }

@@ -5,7 +5,7 @@ Cross-desktop screenshot skill for [pi](https://github.com/badlogic/pi-mono) wit
 It lets pi take screenshots of:
 
 - the **active window**
-- a **specific window** by title or app id/class
+- a **specific visible window** by title or app id/class
 - the **current workspace**
 - a **specific workspace**
 - a **specific output / monitor**
@@ -31,6 +31,7 @@ This skill hides those differences behind one stable interface, so pi can use it
 - **Compositor-native Sway support** using `grim` + `swaymsg`
 - **Hyprland support** using `grim` + `hyprctl`
 - **Ranked window matching** by title and app id/class
+- **Visibility-aware window capture** on Sway/Hyprland so hidden windows are rejected instead of producing misleading screenshots
 - **Ambiguity detection** so the agent does not guess incorrectly
 - **Structured JSON output** for reliable agent use
 - **Image metadata** in results: width, height, file size
@@ -58,6 +59,8 @@ Natural-language prompts:
 
 If a window query is ambiguous, the skill returns candidate matches instead of guessing.
 
+On Sway and Hyprland, window and window-id capture are screen-region based. That means they can only reliably capture windows that are currently visible on a workspace/monitor; hidden or off-workspace windows are rejected.
+
 ## Direct command-line usage
 
 The skill is implemented behind one stable entrypoint:
@@ -67,6 +70,7 @@ The skill is implemented behind one stable entrypoint:
 ./capture.sh region
 ./capture.sh active-window
 ./capture.sh window "Firefox"
+./capture.sh window-id 229
 ./capture.sh output HDMI-A-1
 ./capture.sh workspace current
 ./capture.sh workspace 4
@@ -138,7 +142,8 @@ Primary implementation. Supports:
 - full desktop
 - region
 - active window
-- window by query
+- window by query (visible windows only)
+- window by exact id (visible windows only)
 - output by name
 - workspace by name/number/current
 - list windows
@@ -147,7 +152,7 @@ Primary implementation. Supports:
 
 ### Hyprland
 
-Implemented backend with the same major capabilities as Sway.
+Implemented backend with the same major capabilities as Sway. Window capture is also visibility-aware there.
 
 ### GNOME Wayland
 
@@ -245,6 +250,7 @@ screenshot-tools/
 - `capture.sh` is the stable public interface
 - backend-specific logic lives under `lib/`
 - output is intentionally JSON-first for good LLM/tool interoperability
+- on Sway/Hyprland, `window` and `window-id` use screen-region capture under the compositor, not direct hidden-surface capture
 - the matching logic prefers exact matches, then prefix matches, then substring matches
 - if top matches are tied, the script reports ambiguity instead of choosing arbitrarily
 

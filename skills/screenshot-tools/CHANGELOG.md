@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Reject hidden/off-workspace windows for `window` and `window-id` on Sway and Hyprland instead of returning misleading screen-region captures
+- Include window visibility and workspace/monitor context in window listings and match metadata
+- Clarify in docs that compositor window capture is screen-region based, not hidden-surface capture
+
 ## 0.1.0
 
 Initial release.
