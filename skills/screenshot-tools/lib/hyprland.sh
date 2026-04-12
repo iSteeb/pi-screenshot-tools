@@ -31,6 +31,23 @@ hypr_visible_windows_json() {
   jq -c 'map(select((.visible // false) == true))' <<<"$(hypr_windows_json)"
 }
 
+hypr_current_workspace_name() {
+  hypr_require_jq
+  hyprctl monitors -j | jq -r 'first(.[] | select(.focused == true) | .activeWorkspace.name) // empty'
+}
+
+hypr_switch_to_workspace() {
+  local workspace_name="$1"
+  [[ -n "$workspace_name" ]] || return 1
+  hyprctl dispatch workspace "name:$workspace_name" >/dev/null
+}
+
+hypr_focus_window_by_address() {
+  local window_address="$1"
+  [[ -n "$window_address" ]] || return 1
+  hyprctl dispatch focuswindow "address:$window_address" >/dev/null
+}
+
 hypr_outputs_json() {
   hypr_require_jq
   hyprctl monitors -j | jq -c '[.[] | {
@@ -67,7 +84,7 @@ hypr_ranked_window_matches() {
   hypr_require_jq
   local q_lower windows_json
   q_lower="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')"
-  windows_json="$(hypr_visible_windows_json)"
+  windows_json="$(hypr_windows_json)"
   jq -c --arg q "$q_lower" '
     map(
       . + {
@@ -121,17 +138,58 @@ hypr_workspace_geometry() {
   fi
 }
 
-hypr_require_window_visible_for_capture() {
+hypr_capture_window_by_id() {
   local mode="$1"
-  local geom_json="$2"
-  local workspace monitor visible details
-  workspace="$(jq -r '.workspace // empty' <<<"$geom_json")"
-  monitor="$(jq -r '.monitor // empty' <<<"$geom_json")"
+  local window_id="$2"
+  local path="$3"
+  local geom_json current_workspace target_workspace visible restore_workspace extra_json workspace_visited window_address
+
+  geom_json="$(hypr_window_geometry_by_id "$window_id")"
+  [[ "$geom_json" != "null" ]] || fail_json "No Hyprland window matched id: $window_id" "hyprland-grim" "$mode"
+
+  current_workspace="$(hypr_current_workspace_name)"
+  target_workspace="$(jq -r '.workspace // empty' <<<"$geom_json")"
+  visible="$(jq -r '.visible // false' <<<"$geom_json")"
+  window_address="$(jq -r '.address // empty' <<<"$geom_json")"
+  restore_workspace=""
+  workspace_visited="false"
+
+  cleanup() {
+    if [[ -n "$restore_workspace" ]]; then
+      hypr_switch_to_workspace "$restore_workspace" || true
+    fi
+  }
+  trap cleanup EXIT
+
+  if [[ "$visible" != "true" && -n "$target_workspace" && "$target_workspace" != "$current_workspace" ]]; then
+    restore_workspace="$current_workspace"
+    workspace_visited="true"
+    hypr_switch_to_workspace "$target_workspace" || fail_json "Failed to switch to Hyprland workspace: $target_workspace" "hyprland-grim" "$mode"
+    sleep 0.15
+  fi
+
+  hypr_focus_window_by_address "$window_address" || true
+  sleep 0.05
+
+  geom_json="$(hypr_window_geometry_by_id "$window_id")"
+  [[ "$geom_json" != "null" ]] || fail_json "No Hyprland window matched id: $window_id after workspace switch" "hyprland-grim" "$mode"
+
   visible="$(jq -r '.visible // false' <<<"$geom_json")"
   if [[ "$visible" != "true" ]]; then
-    details="$(jq -cn --arg reason "window-not-visible" --arg capture_method "screen-region" --arg workspace "$workspace" --arg monitor "$monitor" --argjson match "$geom_json" '{reason:$reason, capture_method:$capture_method, workspace:($workspace | select(length > 0)), monitor:($monitor | select(length > 0)), match:$match}')"
-    fail_json "Cannot capture window because it is not visible on any current monitor; this backend captures screen regions, not hidden window surfaces" "hyprland-grim" "$mode" "$details"
+    extra_json="$(jq -cn --arg reason "window-not-visible" --arg capture_method "screen-region" --arg workspace "$target_workspace" --argjson match "$geom_json" '{reason:$reason, capture_method:$capture_method, workspace:($workspace | select(length > 0)), match:$match}')"
+    fail_json "Cannot capture window because it did not become visible after switching workspaces; this backend captures screen regions, not hidden window surfaces" "hyprland-grim" "$mode" "$extra_json"
   fi
+
+  grim -g "$(geom_to_grim "$geom_json")" "$path"
+  extra_json="$(jq -c --argjson workspace_visit "$workspace_visited" '{capture_method:"screen-region", workspace_visit: $workspace_visit, match:{address, title, app_id, pid, workspace, monitor, visible}}' <<<"$geom_json")"
+
+  if [[ -n "$restore_workspace" ]]; then
+    hypr_switch_to_workspace "$restore_workspace" || true
+    restore_workspace=""
+  fi
+  trap - EXIT
+
+  emit_success "hyprland-grim" "$mode" "$path" "$geom_json" "$extra_json"
 }
 
 hypr_capture() {
@@ -157,26 +215,18 @@ hypr_capture() {
     window)
       [[ -n "$WINDOW_QUERY" ]] || fail_json "window mode requires a title or class fragment" "hyprland-grim" "window"
       matches="$(hypr_ranked_window_matches "$WINDOW_QUERY")"
-      [[ "$(jq 'length' <<<"$matches")" -gt 0 ]] || fail_json "No visible Hyprland window matched: $WINDOW_QUERY" "hyprland-grim" "window"
+      [[ "$(jq 'length' <<<"$matches")" -gt 0 ]] || fail_json "No Hyprland window matched: $WINDOW_QUERY" "hyprland-grim" "window"
       second="$(jq '.[1] // null' <<<"$matches")"
       if [[ "$second" != "null" && "$(jq -r '.[0].base_score' <<<"$matches")" == "$(jq -r '.[1].base_score' <<<"$matches")" ]]; then
         fail_json "Ambiguous window query: $WINDOW_QUERY" "hyprland-grim" "window" "$(jq -c --arg q "$WINDOW_QUERY" '{query:$q, matches:.}' <<<"$matches")"
       fi
       path="$(mk_png_path "$OUTPUT")"
-      geom="$(jq -c '.[0].geometry + {title: .[0].title, app_id: .[0].app_id, pid: .[0].pid, address: .[0].address, workspace: .[0].workspace, monitor: .[0].monitor, visible: .[0].visible}' <<<"$matches")"
-      extra="$(jq -c '.[0] | {capture_method:"screen-region", match:{address, title, app_id, pid, workspace, monitor, visible, score, base_score}}' <<<"$matches")"
-      grim -g "$(geom_to_grim "$geom")" "$path"
-      emit_success "hyprland-grim" "window" "$path" "$geom" "$extra"
+      hypr_capture_window_by_id "window" "$(jq -r '.[0].address' <<<"$matches")" "$path"
       ;;
     window-id)
       [[ -n "$WINDOW_ID" ]] || fail_json "window-id mode requires a window id" "hyprland-grim" "window-id"
       path="$(mk_png_path "$OUTPUT")"
-      geom="$(hypr_window_geometry_by_id "$WINDOW_ID")"
-      [[ "$geom" != "null" ]] || fail_json "No Hyprland window matched id: $WINDOW_ID" "hyprland-grim" "window-id"
-      hypr_require_window_visible_for_capture "window-id" "$geom"
-      extra="$(jq -c '{capture_method:"screen-region", match:{address, title, app_id, pid, workspace, monitor, visible}}' <<<"$geom")"
-      grim -g "$(geom_to_grim "$geom")" "$path"
-      emit_success "hyprland-grim" "window-id" "$path" "$geom" "$extra"
+      hypr_capture_window_by_id "window-id" "$WINDOW_ID" "$path"
       ;;
     output)
       [[ -n "$OUTPUT_NAME" ]] || fail_json "output mode requires an output name" "hyprland-grim" "output"

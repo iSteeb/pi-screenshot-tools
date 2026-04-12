@@ -87,7 +87,7 @@ After `/screenshot list-windows`, you can capture an exact entry by id:
 /screenshot-icat window-id 229
 ```
 
-On Sway, this is still screen-region capture, but the backend may briefly switch to the target workspace, focus the window, capture it, and then switch back. On Hyprland, the target window must still currently be visible; hidden or off-workspace windows are rejected.
+On Sway and Hyprland, this is still screen-region capture, but the backend may briefly switch to the target workspace, focus the window, capture it, and then switch back.
 
 ## Notes
 

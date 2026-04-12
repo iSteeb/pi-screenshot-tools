@@ -30,8 +30,7 @@ Use this skill when the user wants to:
 - Prefer **non-interactive** capture when the request is unambiguous.
 - If the user asks for the **current** or **active** window, prefer `active-window`.
 - If the user asks for a window by name/app, prefer `window "..."`.
-- On Sway, window and window-id capture are screen-region based; if the target is on another workspace, the backend may briefly switch there, focus it, capture it, and switch back.
-- On Hyprland, window and window-id capture are screen-region based and still only reliable for currently visible windows.
+- On Sway/Hyprland, window and window-id capture are screen-region based; if the target is on another workspace, the backend may briefly switch there, focus it, capture it, and switch back.
 - If the query may be ambiguous, first use `list-windows`.
 - If `window "..."` returns an ambiguity error, show the candidate matches and ask the user to choose.
 - If exact window capture is not supported on the current desktop, explain the limitation and offer `region` as fallback.
@@ -151,9 +150,7 @@ Window matching is ranked, not just substring-based:
 
 If the top two results have the same score, treat the query as ambiguous instead of guessing.
 
-For Sway, `window` and `window-id` do not capture hidden window surfaces directly. They capture the compositor-visible screen region and may briefly switch to the target workspace to make the window visible first.
-
-For Hyprland, `window` and `window-id` also do not capture hidden window surfaces directly and still reject hidden/off-workspace targets.
+For Sway/Hyprland, `window` and `window-id` do not capture hidden window surfaces directly. They capture the compositor-visible screen region and may briefly switch to the target workspace to make the window visible first.
 
 ## Dependencies
 

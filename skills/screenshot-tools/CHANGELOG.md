@@ -4,8 +4,7 @@
 
 ### Changed
 
-- On Sway, `window` and `window-id` now automatically visit the target workspace, focus the window, capture it, and return to the original workspace when needed
-- On Hyprland, hidden/off-workspace windows are still rejected instead of returning misleading screen-region captures
+- On Sway and Hyprland, `window` and `window-id` now automatically visit the target workspace, focus the window, capture it, and return to the original workspace when needed
 - Include window visibility and workspace/monitor context in window listings and match metadata
 - Clarify in docs that compositor window capture is screen-region based, not hidden-surface capture
 
