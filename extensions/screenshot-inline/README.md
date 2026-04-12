@@ -27,6 +27,7 @@ and falls back to:
 - `region`
 - `active-window`
 - `window` (requires `query`)
+- `window-id` (requires `query`)
 - `output` (requires `query`)
 - `workspace` (`query` optional, defaults to `current`)
 - `list-windows`
@@ -43,6 +44,7 @@ Examples:
 /screenshot full
 /screenshot workspace current
 /screenshot window kitty
+/screenshot window-id 229
 /screenshot list-windows
 ```
 
@@ -58,6 +60,7 @@ Examples:
 /screenshot-icat
 /screenshot-icat active-window
 /screenshot-icat window kitty
+/screenshot-icat window-id 229
 ```
 
 This captures a screenshot and displays it via `kitten icat --stdin=no`. It is useful as a tmux fallback when pi's TUI image rendering path does not display images reliably. Because `icat` writes directly to the terminal outside pi's render loop, you may need to press `Esc` afterward to force pi to redraw cleanly.
@@ -74,6 +77,15 @@ Examples:
 ```
 
 This helps compare different pi image rendering paths when debugging terminal or tmux behavior.
+
+## Exact window-id capture
+
+After `/screenshot list-windows`, you can capture an exact entry by id:
+
+```text
+/screenshot window-id 229
+/screenshot-icat window-id 229
+```
 
 ## Notes
 

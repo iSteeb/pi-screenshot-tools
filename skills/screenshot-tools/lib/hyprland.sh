@@ -82,6 +82,24 @@ hypr_ranked_window_matches() {
   ] | sort_by(-.score, .title, .app_id)'
 }
 
+hypr_window_geometry_by_id() {
+  local window_id="$1"
+  hypr_require_jq
+  hyprctl clients -j | jq -c --arg q "$window_id" 'first(.[]
+    | select((.address // "") == $q or ((.pid|tostring) == $q))
+    | {
+        x: .at[0],
+        y: .at[1],
+        width: .size[0],
+        height: .size[1],
+        title: (.title // ""),
+        app_id: (.class // ""),
+        pid,
+        address
+      }
+  )'
+}
+
 hypr_output_geometry() {
   local out_name="$1"
   hypr_require_jq
@@ -131,6 +149,15 @@ hypr_capture() {
       extra="$(jq -c '.[0] | {match:{address, title, app_id, pid, score, base_score}}' <<<"$matches")"
       grim -g "$(geom_to_grim "$geom")" "$path"
       emit_success "hyprland-grim" "window" "$path" "$geom" "$extra"
+      ;;
+    window-id)
+      [[ -n "$WINDOW_ID" ]] || fail_json "window-id mode requires a window id" "hyprland-grim" "window-id"
+      path="$(mk_png_path "$OUTPUT")"
+      geom="$(hypr_window_geometry_by_id "$WINDOW_ID")"
+      [[ "$geom" != "null" ]] || fail_json "No Hyprland window matched id: $WINDOW_ID" "hyprland-grim" "window-id"
+      extra="$(jq -c '{match:{address, title, app_id, pid}}' <<<"$geom")"
+      grim -g "$(geom_to_grim "$geom")" "$path"
+      emit_success "hyprland-grim" "window-id" "$path" "$geom" "$extra"
       ;;
     output)
       [[ -n "$OUTPUT_NAME" ]] || fail_json "output mode requires an output name" "hyprland-grim" "output"

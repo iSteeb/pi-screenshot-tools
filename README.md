@@ -89,6 +89,7 @@ Then reload pi:
 - `Take a screenshot of the active window`
 - `Take a screenshot of the current workspace`
 - `Take a screenshot of the kitty window`
+- `Capture window id 229`
 - `List windows I can capture`
 
 ### Slash commands
@@ -97,6 +98,7 @@ Then reload pi:
 /screenshot
 /screenshot active-window
 /screenshot window kitty
+/screenshot window-id 229
 /screenshot list-windows
 /screenshot-icat active-window
 /screenshot-debug message

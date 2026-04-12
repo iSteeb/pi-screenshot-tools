@@ -18,6 +18,7 @@ shift || true
 
 OUTPUT=""
 WINDOW_QUERY=""
+WINDOW_ID=""
 OUTPUT_NAME=""
 WORKSPACE_QUERY=""
 
@@ -28,6 +29,7 @@ Usage:
   capture.sh region [--output PATH]
   capture.sh active-window [--output PATH]
   capture.sh window <title-or-appid-fragment> [--output PATH]
+  capture.sh window-id <window-id> [--output PATH]
   capture.sh output <output-name> [--output PATH]
   capture.sh workspace [current|name|number] [--output PATH]
   capture.sh list-windows
@@ -54,6 +56,13 @@ parse_args() {
               WINDOW_QUERY="$1"
             else
               WINDOW_QUERY+=" $1"
+            fi
+            ;;
+          window-id)
+            if [[ -z "$WINDOW_ID" ]]; then
+              WINDOW_ID="$1"
+            else
+              WINDOW_ID+=" $1"
             fi
             ;;
           output)

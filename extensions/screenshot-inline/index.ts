@@ -14,6 +14,7 @@ const MODES = [
   "region",
   "active-window",
   "window",
+  "window-id",
   "output",
   "workspace",
   "list-windows",
@@ -30,7 +31,7 @@ const TOOL_PARAMS = Type.Object({
   query: Type.Optional(
     Type.String({
       description:
-        'Required for mode="window", mode="output", and mode="workspace" (unless workspace uses "current").',
+        'Required for mode="window", mode="window-id", mode="output", and mode="workspace" (unless workspace uses "current").',
     }),
   ),
 });
@@ -109,14 +110,14 @@ function buildArgs(params: ToolParams): string[] {
 
   const args: string[] = [params.mode];
 
-  if ((params.mode === "window" || params.mode === "output") && !params.query) {
+  if ((params.mode === "window" || params.mode === "window-id" || params.mode === "output") && !params.query) {
     throw new Error(`mode=${params.mode} requires query`);
   }
   if (params.mode === "workspace") {
     args.push(params.query?.trim() || "current");
     return args;
   }
-  if ((params.mode === "window" || params.mode === "output") && params.query) {
+  if ((params.mode === "window" || params.mode === "window-id" || params.mode === "output") && params.query) {
     args.push(params.query);
   }
   return args;
@@ -242,7 +243,7 @@ export default function screenshotInline(pi: ExtensionAPI) {
     promptGuidelines: [
       'Use this tool when the user asks to take, inspect, or show a screenshot.',
       'Use mode="active-window" for the current/focused window.',
-      'Use mode="window" with query for a named app/window, mode="output" for a monitor, and mode="workspace" for a workspace.',
+      'Use mode="window" with query for a named app/window, mode="window-id" with query for an exact listed window id, mode="output" for a monitor, and mode="workspace" for a workspace.',
       'Use list-windows, list-outputs, or list-workspaces first if the target is ambiguous.',
     ],
     parameters: TOOL_PARAMS,
@@ -324,7 +325,7 @@ export default function screenshotInline(pi: ExtensionAPI) {
 
   pi.registerCommand("screenshot", {
     description:
-      "Capture a screenshot directly. Usage: /screenshot [active-window|full|region|workspace [name]|window <query>|output <name>|list-windows|list-outputs|list-workspaces]",
+      "Capture a screenshot directly. Usage: /screenshot [active-window|full|region|workspace [name]|window <query>|window-id <id>|output <name>|list-windows|list-outputs|list-workspaces]",
     handler: async (args, ctx) => {
       const params = parseCommandArgs(args);
       const { result, imageBase64 } = await runCapture(params, undefined, (update) => {
@@ -395,7 +396,7 @@ export default function screenshotInline(pi: ExtensionAPI) {
 
   pi.registerCommand("screenshot-icat", {
     description:
-      "Capture a screenshot and display it with kitten icat. Useful as a tmux fallback. Usage: /screenshot-icat [active-window|full|region|workspace [name]|window <query>|output <name>]",
+      "Capture a screenshot and display it with kitten icat. Useful as a tmux fallback. Usage: /screenshot-icat [active-window|full|region|workspace [name]|window <query>|window-id <id>|output <name>]",
     handler: async (args, ctx) => {
       const params = parseCommandArgs(args);
       const { result } = await runCapture(params, undefined, (update) => {

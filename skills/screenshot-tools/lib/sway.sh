@@ -98,6 +98,24 @@ sway_ranked_window_matches() {
   ] | sort_by(-.score, .title, .app_id)'
 }
 
+sway_window_geometry_by_id() {
+  local window_id="$1"
+  sway_require_jq
+  swaymsg -t get_tree | jq -c --argjson id "$window_id" 'first(.. | objects
+    | select((.type? == "con" or .type? == "floating_con") and (.id? == $id) and (.rect? != null))
+    | {
+        x: .rect.x,
+        y: .rect.y,
+        width: .rect.width,
+        height: .rect.height,
+        title: (.name // ""),
+        app_id: (.app_id // ""),
+        id: .id,
+        pid: .pid
+      }
+  )'
+}
+
 sway_output_geometry() {
   local out_name="$1"
   sway_require_jq
@@ -150,6 +168,16 @@ sway_capture() {
       extra="$(jq -c '.[0] | {match:{id, title, app_id, pid, score, base_score}}' <<<"$matches")"
       grim -g "$(geom_to_grim "$geom")" "$path"
       emit_success "sway-grim" "window" "$path" "$geom" "$extra"
+      ;;
+    window-id)
+      [[ -n "$WINDOW_ID" ]] || fail_json "window-id mode requires a window id" "sway-grim" "window-id"
+      [[ "$WINDOW_ID" =~ ^[0-9]+$ ]] || fail_json "window-id must be numeric: $WINDOW_ID" "sway-grim" "window-id"
+      path="$(mk_png_path "$OUTPUT")"
+      geom="$(sway_window_geometry_by_id "$WINDOW_ID")"
+      [[ "$geom" != "null" ]] || fail_json "No sway window matched id: $WINDOW_ID" "sway-grim" "window-id"
+      extra="$(jq -c '{match:{id, title, app_id, pid}}' <<<"$geom")"
+      grim -g "$(geom_to_grim "$geom")" "$path"
+      emit_success "sway-grim" "window-id" "$path" "$geom" "$extra"
       ;;
     output)
       [[ -n "$OUTPUT_NAME" ]] || fail_json "output mode requires an output name" "sway-grim" "output"

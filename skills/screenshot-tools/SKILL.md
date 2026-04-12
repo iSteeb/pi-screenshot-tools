@@ -14,6 +14,7 @@ Use this skill when the user wants to:
 - select a region interactively
 - capture the active/focused window
 - capture a window by title or app id/class
+- capture a window by exact listed window id
 - list windows, outputs, or workspaces before choosing one
 
 ## Current implementation status
@@ -42,6 +43,7 @@ Use this skill when the user wants to:
 {baseDir}/capture.sh region
 {baseDir}/capture.sh active-window
 {baseDir}/capture.sh window "Firefox"
+{baseDir}/capture.sh window-id 229
 {baseDir}/capture.sh output HDMI-A-1
 {baseDir}/capture.sh workspace current
 {baseDir}/capture.sh workspace 2
@@ -97,6 +99,14 @@ Errors are also structured JSON. Ambiguous window matching includes candidate ma
 ```
 
 3. Ask the user to pick one of the listed windows, then retry with a more specific query.
+
+### Window by exact id
+
+If `list-windows` already returned a specific window id, capture it directly:
+
+```bash
+{baseDir}/capture.sh window-id 229
+```
 
 ### Output/monitor capture
 
