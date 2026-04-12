@@ -1,0 +1,52 @@
+{
+  "name": "pi-screenshot-tools",
+  "version": "0.1.0",
+  "description": "Screenshot skill and inline screenshot extension for pi",
+  "license": "MIT",
+  "author": "m64",
+  "homepage": "https://github.com/M64GitHub/pi-screenshot-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/M64GitHub/pi-screenshot-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/M64GitHub/pi-screenshot-tools/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-skill",
+    "screenshot",
+    "wayland",
+    "sway",
+    "hyprland",
+    "kitty",
+    "tmux"
+  ],
+  "files": [
+    "README.md",
+    "extensions",
+    "skills"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "image": "./skills/screenshot-tools/docs/images/pi-session.png"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
