@@ -1,5 +1,5 @@
 {
-  "name": "pi-screenshot-tools",
+  "name": "@m64/pi-screenshot-tools",
   "version": "0.1.2",
   "description": "Screenshot skill and inline screenshot extension for pi",
   "license": "MIT",

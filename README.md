@@ -73,7 +73,7 @@ pi install git:github.com/M64GitHub/pi-screenshot-tools
 ### From npm
 
 ```bash
-pi install npm:pi-screenshot-tools
+pi install npm:@m64/pi-screenshot-tools
 ```
 
 Then reload pi:
