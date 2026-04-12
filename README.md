@@ -7,6 +7,8 @@ A **pi package** that bundles both:
 
 This package gives pi a stable screenshot backend plus user-facing commands/tools for displaying captures inline in supported terminals such as **Kitty**.
 
+![pi screenshot tools](./skills/screenshot-tools/docs/images/pi-session.png)
+
 ## Included resources
 
 ### Skill: `screenshot-tools`
