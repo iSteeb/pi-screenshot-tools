@@ -93,7 +93,7 @@ Then reload pi:
 - `Capture window id 229`
 - `List windows I can capture`
 
-On Sway and Hyprland, named/id window capture is screen-region based, so only currently visible windows can be captured reliably.
+On Sway, named/id window capture is screen-region based and may briefly switch to the target workspace to make an off-workspace window visible before capturing and returning. On Hyprland, named/id window capture is still limited to currently visible windows.
 
 ### Slash commands
 

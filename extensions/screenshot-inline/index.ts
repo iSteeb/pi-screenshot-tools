@@ -187,6 +187,9 @@ function summarizeSuccess(result: CaptureSuccess): string {
     const appId = typeof result.match.app_id === "string" ? result.match.app_id : undefined;
     if (title || appId) parts.push(`Matched: ${title || appId}${title && appId ? ` (${appId})` : ""}.`);
   }
+  if (result.workspace_visit === true) {
+    parts.push("Visited target workspace for capture.");
+  }
   return parts.join(" ");
 }
 

@@ -59,7 +59,9 @@ Natural-language prompts:
 
 If a window query is ambiguous, the skill returns candidate matches instead of guessing.
 
-On Sway and Hyprland, window and window-id capture are screen-region based. That means they can only reliably capture windows that are currently visible on a workspace/monitor; hidden or off-workspace windows are rejected.
+On Sway, window and window-id capture are screen-region based. If a matching window is on another workspace, the backend may briefly switch there, focus it, capture it, and then switch back.
+
+On Hyprland, window and window-id capture are still screen-region based and only reliably work for windows that are currently visible on a workspace/monitor; hidden or off-workspace windows are rejected.
 
 ## Direct command-line usage
 
@@ -251,6 +253,8 @@ screenshot-tools/
 - backend-specific logic lives under `lib/`
 - output is intentionally JSON-first for good LLM/tool interoperability
 - on Sway/Hyprland, `window` and `window-id` use screen-region capture under the compositor, not direct hidden-surface capture
+- on Sway, off-workspace window capture may briefly visit the target workspace and then return
+- on Hyprland, off-workspace window capture is still rejected
 - the matching logic prefers exact matches, then prefix matches, then substring matches
 - if top matches are tied, the script reports ambiguity instead of choosing arbitrarily
 

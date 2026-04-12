@@ -40,6 +40,23 @@ sway_visible_windows_json() {
   jq -c 'map(select((.visible // false) == true))' <<<"$(sway_windows_json)"
 }
 
+sway_current_workspace_name() {
+  sway_require_jq
+  swaymsg -t get_workspaces | jq -r 'first(.[] | select(.focused == true) | .name) // empty'
+}
+
+sway_switch_to_workspace() {
+  local workspace_name="$1"
+  [[ -n "$workspace_name" ]] || return 1
+  swaymsg workspace "$workspace_name" >/dev/null
+}
+
+sway_focus_window_by_id() {
+  local window_id="$1"
+  [[ -n "$window_id" ]] || return 1
+  swaymsg "[con_id=$window_id] focus" >/dev/null
+}
+
 sway_outputs_json() {
   sway_require_jq
   swaymsg -t get_outputs | jq -c '[.[] | select(.active == true) | {
@@ -87,7 +104,7 @@ sway_ranked_window_matches() {
   sway_require_jq
   local q_lower windows_json
   q_lower="$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')"
-  windows_json="$(sway_visible_windows_json)"
+  windows_json="$(sway_windows_json)"
   jq -c --arg q "$q_lower" '
     map(
       . + {
@@ -140,16 +157,57 @@ sway_workspace_geometry() {
   fi
 }
 
-sway_require_window_visible_for_capture() {
+sway_capture_window_by_id() {
   local mode="$1"
-  local geom_json="$2"
-  local workspace visible details
-  workspace="$(jq -r '.workspace // empty' <<<"$geom_json")"
+  local window_id="$2"
+  local path="$3"
+  local geom_json current_workspace target_workspace visible restore_workspace extra_json workspace_visited
+
+  geom_json="$(sway_window_geometry_by_id "$window_id")"
+  [[ "$geom_json" != "null" ]] || fail_json "No sway window matched id: $window_id" "sway-grim" "$mode"
+
+  current_workspace="$(sway_current_workspace_name)"
+  target_workspace="$(jq -r '.workspace // empty' <<<"$geom_json")"
+  visible="$(jq -r '.visible // false' <<<"$geom_json")"
+  restore_workspace=""
+  workspace_visited="false"
+
+  cleanup() {
+    if [[ -n "$restore_workspace" ]]; then
+      sway_switch_to_workspace "$restore_workspace" || true
+    fi
+  }
+  trap cleanup EXIT
+
+  if [[ "$visible" != "true" && -n "$target_workspace" && "$target_workspace" != "$current_workspace" ]]; then
+    restore_workspace="$current_workspace"
+    workspace_visited="true"
+    sway_switch_to_workspace "$target_workspace" || fail_json "Failed to switch to sway workspace: $target_workspace" "sway-grim" "$mode"
+    sleep 0.15
+  fi
+
+  sway_focus_window_by_id "$window_id" || true
+  sleep 0.05
+
+  geom_json="$(sway_window_geometry_by_id "$window_id")"
+  [[ "$geom_json" != "null" ]] || fail_json "No sway window matched id: $window_id after workspace switch" "sway-grim" "$mode"
+
   visible="$(jq -r '.visible // false' <<<"$geom_json")"
   if [[ "$visible" != "true" ]]; then
-    details="$(jq -cn --arg reason "window-not-visible" --arg capture_method "screen-region" --arg workspace "$workspace" --argjson match "$geom_json" '{reason:$reason, capture_method:$capture_method, workspace:($workspace | select(length > 0)), match:$match}')"
-    fail_json "Cannot capture window because it is not visible on the current desktop; this backend captures screen regions, not hidden window surfaces" "sway-grim" "$mode" "$details"
+    extra_json="$(jq -cn --arg reason "window-not-visible" --arg capture_method "screen-region" --arg workspace "$target_workspace" --argjson match "$geom_json" '{reason:$reason, capture_method:$capture_method, workspace:($workspace | select(length > 0)), match:$match}')"
+    fail_json "Cannot capture window because it did not become visible after switching workspaces; this backend captures screen regions, not hidden window surfaces" "sway-grim" "$mode" "$extra_json"
   fi
+
+  grim -g "$(geom_to_grim "$geom_json")" "$path"
+  extra_json="$(jq -c --argjson workspace_visit "$workspace_visited" '{capture_method:"screen-region", workspace_visit: $workspace_visit, match:{id, title, app_id, pid, workspace, visible}}' <<<"$geom_json")"
+
+  if [[ -n "$restore_workspace" ]]; then
+    sway_switch_to_workspace "$restore_workspace" || true
+    restore_workspace=""
+  fi
+  trap - EXIT
+
+  emit_success "sway-grim" "$mode" "$path" "$geom_json" "$extra_json"
 }
 
 sway_capture() {
@@ -177,28 +235,20 @@ sway_capture() {
       matches="$(sway_ranked_window_matches "$WINDOW_QUERY")"
       top="$(jq '.[0] // null' <<<"$matches")"
       second="$(jq '.[1] // null' <<<"$matches")"
-      [[ "$top" != "null" ]] || fail_json "No visible sway window matched: $WINDOW_QUERY" "sway-grim" "window"
+      [[ "$top" != "null" ]] || fail_json "No sway window matched: $WINDOW_QUERY" "sway-grim" "window"
       if [[ "$second" != "null" ]]; then
         if [[ "$(jq -r '.[0].base_score' <<<"$matches")" == "$(jq -r '.[1].base_score' <<<"$matches")" ]]; then
           fail_json "Ambiguous window query: $WINDOW_QUERY" "sway-grim" "window" "$(jq -c --arg q "$WINDOW_QUERY" '{query:$q, matches:.}' <<<"$matches")"
         fi
       fi
       path="$(mk_png_path "$OUTPUT")"
-      geom="$(jq -c '.[0].geometry + {title: .[0].title, app_id: .[0].app_id, id: .[0].id, pid: .[0].pid, workspace: .[0].workspace, visible: .[0].visible}' <<<"$matches")"
-      extra="$(jq -c '.[0] | {capture_method:"screen-region", match:{id, title, app_id, pid, workspace, visible, score, base_score}}' <<<"$matches")"
-      grim -g "$(geom_to_grim "$geom")" "$path"
-      emit_success "sway-grim" "window" "$path" "$geom" "$extra"
+      sway_capture_window_by_id "window" "$(jq -r '.[0].id' <<<"$matches")" "$path"
       ;;
     window-id)
       [[ -n "$WINDOW_ID" ]] || fail_json "window-id mode requires a window id" "sway-grim" "window-id"
       [[ "$WINDOW_ID" =~ ^[0-9]+$ ]] || fail_json "window-id must be numeric: $WINDOW_ID" "sway-grim" "window-id"
       path="$(mk_png_path "$OUTPUT")"
-      geom="$(sway_window_geometry_by_id "$WINDOW_ID")"
-      [[ "$geom" != "null" ]] || fail_json "No sway window matched id: $WINDOW_ID" "sway-grim" "window-id"
-      sway_require_window_visible_for_capture "window-id" "$geom"
-      extra="$(jq -c '{capture_method:"screen-region", match:{id, title, app_id, pid, workspace, visible}}' <<<"$geom")"
-      grim -g "$(geom_to_grim "$geom")" "$path"
-      emit_success "sway-grim" "window-id" "$path" "$geom" "$extra"
+      sway_capture_window_by_id "window-id" "$WINDOW_ID" "$path"
       ;;
     output)
       [[ -n "$OUTPUT_NAME" ]] || fail_json "output mode requires an output name" "sway-grim" "output"
