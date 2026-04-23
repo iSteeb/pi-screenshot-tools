@@ -1,10 +1,11 @@
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { type ExtensionAPI, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { Container, Image, Text } from "@mariozechner/pi-tui";
+import type { TextContent, ImageContent } from "@mariozechner/pi-ai";
 import { Type, type Static } from "@sinclair/typebox";
 
 const execFileAsync = promisify(execFile);
@@ -70,18 +71,6 @@ type ScreenshotMessageDetails = {
   imageBase64?: string;
 };
 
-function showWithKittenIcat(path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("kitten", ["icat", "--stdin=no", path], {
-      stdio: ["ignore", "inherit", "inherit"],
-      env: process.env,
-      detached: true,
-    });
-    child.on("error", reject);
-    child.unref();
-    resolve();
-  });
-}
 
 function getCaptureScriptCandidates(): string[] {
   return [
@@ -279,7 +268,7 @@ export default function screenshotInline(pi: ExtensionAPI) {
         };
       }
 
-      const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+      const content: Array<TextContent | ImageContent> = [
         { type: "text", text: summarizeSuccess(result) },
       ];
 
@@ -299,44 +288,21 @@ export default function screenshotInline(pi: ExtensionAPI) {
         } satisfies ScreenshotMessageDetails,
       };
     },
-    renderResult(result, { isPartial }, theme) {
-      if (isPartial) {
-        return new Text(theme.fg("warning", "Working..."), 0, 0);
-      }
 
-      const details = (result.details || {}) as ScreenshotMessageDetails;
-      const container = new Container();
-      const captureResult = details.result;
-      const contentImage = result.content.find(
-        (item): item is { type: "image"; data: string; mimeType: string } => item.type === "image",
-      );
-      const imageBase64 = details.imageBase64 || contentImage?.data;
-      const imageMimeType = contentImage?.mimeType || "image/png";
-
-      if (!captureResult) {
-        return new Text(theme.fg("error", `Missing screenshot result details.${imageBase64 ? " Image data exists." : ""}`), 0, 0);
-      }
-
-      const headline = captureResult.ok
-        ? theme.fg("success", captureResult.mode?.startsWith("list-") ? "Screenshot listing" : "Screenshot captured")
-        : theme.fg("error", "Screenshot failed");
-      container.addChild(new Text(`${headline}\n${formatResultText(captureResult)}`, 0, 0));
-      if (imageBase64) {
-        container.addChild(new Image(imageBase64, imageMimeType, theme, { maxWidthCells: 120, maxHeightCells: 36 }));
-      }
-      return container;
-    },
   });
 
+
+
   pi.registerMessageRenderer("screenshot-capture", (message, _options, theme) => {
-    const details = (message.details || {}) as ScreenshotMessageDetails;
     const container = new Container();
-    const headline = details.result?.ok
-      ? theme.fg("success", details.result.mode?.startsWith("list-") ? "Screenshot listing" : "Screenshot captured")
-      : theme.fg("error", "Screenshot failed");
-    container.addChild(new Text(`${headline}\n${formatResultText(details.result)}`, 0, 0));
+    const text = typeof message.content === "string"
+      ? message.content
+      : message.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+    container.addChild(new Text(text, 0, 0));
+
+    const details = (message.details || {}) as ScreenshotMessageDetails;
     if (details.imageBase64) {
-      container.addChild(new Image(details.imageBase64, "image/png", theme, { maxWidthCells: 120, maxHeightCells: 36 }));
+      container.addChild(new Image(details.imageBase64, "image/png", theme, { maxWidthCells: 60 }));
     }
     return container;
   });
@@ -351,14 +317,20 @@ export default function screenshotInline(pi: ExtensionAPI) {
         if (text) ctx.ui.notify(text, "info");
       });
 
-      const isListingMode = result.ok && typeof result.mode === "string" && result.mode.startsWith("list-");
-      if (Boolean(process.env.TMUX) && result.ok && !isListingMode) {
-        ctx.ui.notify("In tmux, if inline rendering does not appear, use /screenshot-icat.", "info");
+      if (Boolean(process.env.TMUX) && result.ok && !(typeof result.mode === "string" && result.mode.startsWith("list-"))) {
+        ctx.ui.notify("In tmux, inline image rendering may not display reliably.", "info");
+      }
+
+      const messageContent: Array<TextContent | ImageContent> = [
+        { type: "text", text: formatResultText(result) },
+      ];
+      if (imageBase64) {
+        messageContent.push({ type: "image", data: imageBase64, mimeType: "image/png" });
       }
 
       pi.sendMessage({
         customType: "screenshot-capture",
-        content: formatResultText(result),
+        content: messageContent,
         display: true,
         details: {
           result,
@@ -368,82 +340,5 @@ export default function screenshotInline(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("screenshot-debug", {
-    description:
-      "Debug image rendering paths. Usage: /screenshot-debug [message|overlay] [capture args]. Default: message active-window",
-    handler: async (args, ctx) => {
-      const trimmed = args.trim();
-      const parts = trimmed ? trimmed.split(/\s+/) : [];
-      const debugMode = parts[0] === "overlay" || parts[0] === "message" ? parts.shift()! : "message";
-      const params = parseCommandArgs(parts.join(" "));
-      const { result, imageBase64 } = await runCapture(params, undefined, (update) => {
-        const text = update.content?.[0]?.text;
-        if (text) ctx.ui.notify(`[debug:${debugMode}] ${text}`, "info");
-      });
 
-      if (debugMode === "message") {
-        pi.sendMessage({
-          customType: "screenshot-capture",
-          content: `[debug:message] ${formatResultText(result)}`,
-          display: true,
-          details: {
-            result,
-            imageBase64,
-          } satisfies ScreenshotMessageDetails,
-        });
-        return;
-      }
-
-      await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
-        const container = new Container();
-        const title = result.ok ? theme.fg("accent", "Screenshot debug overlay") : theme.fg("error", "Screenshot debug overlay (failed)");
-        container.addChild(new Text(`${title}\n${formatResultText(result)}\n\nPress Esc or Enter to close.`, 0, 0));
-        if (imageBase64) {
-          container.addChild(new Image(imageBase64, "image/png", theme, { maxWidthCells: 120, maxHeightCells: 36 }));
-        }
-        return {
-          render: (w) => container.render(w),
-          invalidate: () => container.invalidate(),
-          handleInput: (data) => {
-            if (data === "\r" || data === "\n" || data === "\x1b") done(undefined);
-          },
-        };
-      }, { overlay: true });
-    },
-  });
-
-  pi.registerCommand("screenshot-icat", {
-    description:
-      "Capture a screenshot and display it with kitten icat. Useful as a tmux fallback. Usage: /screenshot-icat [active-window|full|region|workspace [name]|window <query>|window-id <id>|output <name>]",
-    handler: async (args, ctx) => {
-      const params = parseCommandArgs(args);
-      const { result } = await runCapture(params, undefined, (update) => {
-        const text = update.content?.[0]?.text;
-        if (text) ctx.ui.notify(text, "info");
-      });
-
-      if (!result.ok) {
-        pi.sendMessage({
-          customType: "screenshot-capture",
-          content: formatResultText(result),
-          display: true,
-          details: { result } satisfies ScreenshotMessageDetails,
-        });
-        return;
-      }
-
-      if (!result.path) {
-        ctx.ui.notify("No screenshot path returned.", "error");
-        return;
-      }
-
-      try {
-        await showWithKittenIcat(result.path);
-        ctx.ui.notify(`Displayed via kitten icat: ${result.path}. If pi's prompt looks stuck, press Esc to force a redraw.`, "success");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`kitten icat failed: ${message}`, "error");
-      }
-    },
-  });
 }
